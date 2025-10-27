@@ -1,0 +1,918 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>看的到、聽說的 行程連結查詢</title>
+    <!-- 載入 Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 設定 Tailwind CSS 配置，使用 Inter 字體 -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'Noto Sans TC', 'sans-serif'],
+                    },
+                    colors: {
+                        'primary': '#FADD42',       // Main Color (Yellow/Gold)
+                        'primary-dark': '#E5C83C',  // Darker shade for hover
+                        'accent': '#0097B2',        // Accent/Secondary Color (Teal/Cyan)
+                        'background': '#f9fafb',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* 自定義滾動條樣式，讓結果列表更美觀 */
+        #results-list::-webkit-scrollbar, #admin-data-textarea::-webkit-scrollbar, #admin-list-container::-webkit-scrollbar {
+            width: 8px;
+        }
+        #results-list::-webkit-scrollbar-thumb, #admin-data-textarea::-webkit-scrollbar-thumb, #admin-list-container::-webkit-scrollbar-thumb {
+            background-color: #d1d5db;
+            border-radius: 4px;
+        }
+        #results-list::-webkit-scrollbar-track, #admin-data-textarea::-webkit-scrollbar-track, #admin-list-container::-webkit-scrollbar-track {
+            background-color: #f3f4f6;
+        }
+        .link-text {
+            word-break: break-all;
+        }
+        /* Admin Row 恢復為 4 個欄位 + 操作 */
+        .admin-row {
+            grid-template-columns: 1fr 1fr 1.5fr 3fr auto; /* 國家, 類型, 名稱, 連結, 操作 */
+            gap: 0.5rem;
+            align-items: center;
+            padding: 0.75rem;
+            border-bottom: 1px solid #f3f4f6;
+            display: grid;
+        }
+        /* 自定義確認彈窗的基本樣式 */
+        .modal-overlay {
+            background-color: rgba(0, 0, 0, 0.5);
+        }
+    </style>
+</head>
+<body class="bg-gray-50 font-sans p-4 md:p-8 min-h-screen">
+    <div class="max-w-4xl mx-auto bg-white shadow-2xl rounded-xl p-6 md:p-10 border border-gray-100">
+
+        <!-- Header and Mode Toggle -->
+        <div class="flex justify-between items-center mb-6 border-b pb-4">
+            <h1 class="text-3xl font-extrabold text-gray-800">看的到、聽說的 行程連結查詢</h1>
+            <div class="flex items-center space-x-4">
+                <button id="mode-toggle-btn" class="px-4 py-2 text-sm font-semibold rounded-lg transition duration-150 ease-in-out shadow-md bg-primary text-gray-900 hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2">
+                    切換至後台
+                </button>
+            </div>
+        </div>
+        
+        <!-- Notification/Message Box -->
+        <div id="message-box" class="hidden p-4 rounded-lg text-sm mb-4" role="alert"></div>
+
+        <!-- Password Prompt Container -->
+        <div id="password-prompt" class="p-4 bg-red-50 border border-red-200 rounded-lg mb-4 hidden">
+            <label for="admin-password" class="block text-sm font-medium text-red-700 mb-2">請輸入後台密碼:</label>
+            <div class="flex space-x-2">
+                <input type="password" id="admin-password" placeholder="密碼" class="p-2 border border-red-300 rounded-lg focus:ring-red-500 focus:border-red-500 w-full shadow-sm">
+                <button id="password-submit-btn" class="px-4 py-2 text-white bg-red-600 rounded-lg hover:bg-red-700 transition duration-150 shadow-md">確認</button>
+            </div>
+        </div>
+        
+        <!-- Loading Spinner -->
+        <div id="loading-spinner" class="text-center p-8 text-gray-500 hidden">
+             <svg class="animate-spin -ml-1 mr-3 h-8 w-8 text-accent mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <p class="mt-2 text-sm">正在從雲端載入資料...</p>
+        </div>
+
+        <!-- Search View (Default) -->
+        <div id="search-view" class="space-y-6 hidden">
+            <h2 class="text-2xl font-bold text-gray-700">查詢購買連結</h2>
+            
+            <!-- Global Coupon Display -->
+            <div id="global-coupon-display" class="p-4 rounded-lg text-sm mb-4 bg-accent/10 border-l-4 border-accent hidden">
+                <h3 class="font-bold text-accent mb-1 flex items-center">
+                    <!-- Icon: Tag -->
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 mr-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2H2v10l9.29 9.29c.94.94 2.48.94 3.42 0l6.58-6.58c.94-.94.94-2.48 0-3.42L12 2z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+                    最新優惠資訊 (點擊複製)
+                </h3>
+                <p id="global-coupon-text-content" class="text-gray-700 font-medium whitespace-pre-wrap cursor-pointer" title="點擊複製優惠碼"></p>
+                <p class="text-xs text-blue-500 mt-2 font-semibold">此資訊來自雲端資料庫，將會即時同步。</p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <!-- 國家/地區 篩選器 -->
+                <select id="country-filter" class="p-3 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary transition duration-150 shadow-sm col-span-1 bg-white">
+                    <!-- 選項將由 JS 填充 -->
+                </select>
+                <!-- 票券類型 篩選器 -->
+                <select id="type-filter" class="p-3 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary transition duration-150 shadow-sm col-span-1 bg-white">
+                    <!-- 選項將由 JS 填充 -->
+                </select>
+                <!-- 關鍵字篩選器 -->
+                <input type="text" id="keyword-filter" placeholder="城市、票券名稱或類型關鍵字" class="p-3 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary transition duration-150 shadow-sm col-span-1">
+            </div>
+
+            <div class="text-lg font-semibold text-gray-600 pt-4">查詢結果 (<span id="result-count">0</span> 筆)</div>
+            <div id="results-list" class="max-h-[60vh] overflow-y-auto border border-gray-200 rounded-lg shadow-inner bg-gray-50">
+                <div class="p-4 text-center text-gray-500">請輸入關鍵字進行查詢或等待雲端資料載入...</div>
+            </div>
+        </div>
+
+        <!-- Admin View (Hidden by Default) -->
+        <div id="admin-view" class="space-y-6 hidden">
+            <h2 class="text-2xl font-bold text-red-600">行程資料雲端後台</h2>
+            <div class="bg-blue-100 border-l-4 border-blue-500 p-4 rounded-lg">
+                <p class="text-sm text-blue-800 font-bold">💡 提示：此版本將所有變更即時儲存到雲端公開資料庫。</p>
+                <p class="text-xs text-blue-700 mt-1">您在後台對行程資料的操作，會同步儲存到**公開資料集**，所有使用者都可以查詢到。</p>
+                <p class="text-xs text-blue-700 mt-1">當前使用者 ID: <code id="user-id-display" class="font-mono text-gray-900 bg-white p-0.5 rounded text-[10px] break-all">...</code></p>
+            </div>
+
+            <!-- Global Coupon Edit Section -->
+            <div id="global-coupon-edit-section" class="border p-4 rounded-xl bg-white shadow-lg space-y-4">
+                <h3 class="text-xl font-bold text-accent border-b pb-2">一、全域優惠碼文字編輯 (公開資料)</h3>
+                <p class="text-sm text-gray-600">此文字會顯示在所有使用者的查詢頁面頂端。變更會儲存到雲端並**立即生效**。</p>
+                <textarea id="global-coupon-textarea" rows="4" placeholder="輸入要顯示的優惠碼資訊，例如：輸入 折扣碼：TAIWAN20 享 8折優惠..." class="w-full p-3 border border-gray-300 rounded-lg focus:ring-accent focus:border-accent transition duration-150 shadow-sm text-sm"></textarea>
+                <div class="flex justify-end">
+                    <button id="save-global-coupon-btn" class="px-6 py-3 text-sm font-bold rounded-lg transition duration-150 ease-in-out shadow-md bg-accent text-white hover:bg-accent/90 focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 disabled:bg-accent/50">
+                        儲存到雲端
+                    </button>
+                </div>
+            </div>
+
+            <!-- Mass Import Section -->
+            <div id="import-section" class="border p-4 rounded-xl bg-white shadow-lg space-y-4">
+                <h3 class="text-xl font-bold text-red-600/80 border-b pb-2">二、大批匯入 (公開資料)</h3>
+                <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-lg">
+                    <p class="text-sm text-yellow-800 font-medium">💡 提示：您匯入的資料會成為公開資料，所有知道程式的人都可以查詢到。</p>
+                    <p class="text-sm text-yellow-800 mt-1">欄位順序：**國家地區** &nbsp; **票券類型** &nbsp; **票券名稱** &nbsp; **連結**</p>
+                    <p class="text-xs text-yellow-600 mt-2">例如：台灣 高鐵 高鐵單程票 https://link.to/thsr</p>
+                </div>
+                <textarea id="admin-data-textarea" rows="10" placeholder="貼上您的資料..." class="w-full p-4 border border-gray-300 rounded-lg focus:ring-red-500 focus:border-red-500 transition duration-150 shadow-sm text-sm"></textarea>
+                <div class="flex justify-end">
+                    <button id="import-data-btn" class="px-6 py-3 text-sm font-bold rounded-lg transition duration-150 ease-in-out shadow-md bg-red-600 text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:bg-red-300">
+                        匯入並儲存到雲端
+                    </button>
+                </div>
+            </div>
+
+            <!-- Edit/Delete Section -->
+            <div id="edit-delete-section" class="border p-4 rounded-xl bg-white shadow-lg space-y-4">
+                <h3 class="text-xl font-bold text-red-600/80 flex justify-between items-center border-b pb-2">
+                    <span>三、編輯與刪除**公開**資料 (共 <span id="admin-item-count">0</span> 筆)</span>
+                    <button id="clear-all-btn" class="px-3 py-1 text-xs font-semibold rounded-lg text-red-700 bg-red-100 hover:bg-red-200 transition duration-150">
+                        清空所有公開資料
+                    </button>
+                </h3>
+                
+                <!-- Header Row for Admin List -->
+                <div class="admin-row text-xs font-bold text-gray-600 bg-gray-100/50 rounded-lg shadow-sm">
+                    <div class="hidden md:block">國家/地區</div>
+                    <div class="hidden md:block">票券類型</div>
+                    <div class="hidden md:block">票券名稱</div>
+                    <div class="hidden md:block">連結</div>
+                    <div>操作</div>
+                </div>
+
+                <div id="admin-list-container" class="max-h-[60vh] overflow-y-auto border border-gray-200 rounded-lg shadow-inner">
+                    <div class="text-center text-gray-500 p-4">資料載入中...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Custom Confirmation Modal -->
+    <div id="custom-confirm-modal" class="modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4 hidden transition-opacity duration-300">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6 space-y-4 transform transition-transform duration-300">
+            <div class="flex items-center space-x-3 text-red-600">
+                <!-- Warning Icon -->
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-6 h-6"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                <h3 id="confirm-title" class="text-xl font-bold">確認操作</h3>
+            </div>
+            <p id="confirm-message" class="text-gray-600 text-sm">此操作將直接修改雲端資料庫中的資料。</p>
+            <div class="flex justify-end space-x-3">
+                <button id="cancel-action-btn" class="px-4 py-2 bg-gray-200 text-gray-700 text-sm font-semibold rounded-lg hover:bg-gray-300 transition duration-150">取消</button>
+                <button id="confirm-action-btn" class="px-4 py-2 bg-red-600 text-white text-sm font-semibold rounded-lg hover:bg-red-700 transition duration-150 shadow-md">確認執行</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 雲端資料庫 (Firestore) 與程式邏輯 -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, addDoc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, getDocs, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        // import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js"; // 暫時註解，避免過多 log
+
+        // ----------------------------------------------------
+        // 核心變數與初始化
+        // ----------------------------------------------------
+
+        // 必須使用的環境變數
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        const ADMIN_PASSWORD = '2266'; // 後台密碼
+        let isEditingId = null; // 當前正在編輯的 document ID
+        let pendingAction = null; // 儲存確認後要執行的函式
+        let db, auth;
+        let userId = null;
+        let items = []; // 行程資料陣列，由 onSnapshot 即時更新
+        let globalCouponText = ''; // 全域優惠碼文字，由 onSnapshot 即時更新
+        let initialAuthCheckDone = false; // 確保認證後的邏輯只執行一次
+
+        // DOM 元素 (部分省略，保持與 HTML 結構一致)
+        const modeToggleBtn = document.getElementById('mode-toggle-btn');
+        const searchView = document.getElementById('search-view');
+        const adminView = document.getElementById('admin-view');
+        const countryFilter = document.getElementById('country-filter'); 
+        const typeFilter = document.getElementById('type-filter'); 
+        const keywordFilter = document.getElementById('keyword-filter');
+        const resultsList = document.getElementById('results-list');
+        const resultCount = document.getElementById('result-count');
+        const adminDataTextarea = document.getElementById('admin-data-textarea');
+        const importDataBtn = document.getElementById('import-data-btn');
+        const messageBox = document.getElementById('message-box');
+        const passwordPrompt = document.getElementById('password-prompt');
+        const adminPasswordInput = document.getElementById('admin-password');
+        const passwordSubmitBtn = document.getElementById('password-submit-btn');
+        const loadingSpinner = document.getElementById('loading-spinner');
+
+        // ADMIN DOM ELEMENTS
+        const adminListContainer = document.getElementById('admin-list-container');
+        const adminItemCount = document.getElementById('admin-item-count');
+        const clearAllBtn = document.getElementById('clear-all-btn');
+        const userIdDisplay = document.getElementById('user-id-display');
+        
+        // GLOBAL COUPON ELEMENTS
+        const globalCouponDisplay = document.getElementById('global-coupon-display');
+        const globalCouponTextContent = document.getElementById('global-coupon-text-content');
+        const globalCouponTextarea = document.getElementById('global-coupon-textarea');
+        const saveGlobalCouponBtn = document.getElementById('save-global-coupon-btn');
+        
+        // CUSTOM CONFIRM MODAL ELEMENTS
+        const customConfirmModal = document.getElementById('custom-confirm-modal');
+        const confirmTitle = document.getElementById('confirm-title');
+        const confirmMessage = document.getElementById('confirm-message');
+        const confirmActionBtn = document.getElementById('confirm-action-btn');
+        const cancelActionBtn = document.getElementById('cancel-action-btn');
+
+        // ----------------------------------------------------
+        // Firebase & 認證設定
+        // ----------------------------------------------------
+
+        function setupFirebase() {
+            try {
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                // setLogLevel('Debug'); // uncomment for deep debugging
+                auth = getAuth(app);
+                
+                // 處理認證狀態
+                onAuthStateChanged(auth, async (user) => {
+                    if (user) {
+                        userId = user.uid;
+                        userIdDisplay.textContent = userId;
+                        console.log("Authenticated with UID:", userId);
+                    } else {
+                        // 認證失敗或登出
+                        userId = null;
+                        userIdDisplay.textContent = '匿名模式 (無個人操作權限)';
+                        console.warn("Authentication failed, operating in anonymous mode.");
+                    }
+
+                    if (!initialAuthCheckDone) {
+                        initialAuthCheckDone = true;
+                        // 認證完成後，啟動資料監聽器（無論是否有 userId，公開資料都能讀取）
+                        setupFirestoreListeners();
+                        loadingSpinner.classList.add('hidden');
+                        searchView.classList.remove('hidden');
+                    }
+                });
+                
+                authenticate();
+            } catch (error) {
+                console.error("Firebase Initialization Failed:", error);
+                loadingSpinner.innerHTML = '<p class="text-red-600">Firebase 初始化失敗，請檢查配置。</p>';
+                showMessage('應用程式啟動失敗，無法連線到資料庫。', 'error');
+            }
+        }
+
+        async function authenticate() {
+            try {
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    // 使用匿名登入確保至少有 base 權限
+                    await signInAnonymously(auth);
+                }
+            } catch (error) {
+                console.error("Firebase authentication failed:", error);
+                showMessage('認證失敗，無法操作資料庫。', 'error');
+            }
+        }
+        
+        // ----------------------------------------------------
+        // Firestore 即時監聽器 (保證跨瀏覽器資料同步的核心)
+        // ----------------------------------------------------
+
+        function setupFirestoreListeners() {
+            if (!db) return; // DB 必須已初始化
+
+            // 1. 監聽行程項目 (公開資料: 所有用戶皆可讀)
+            // *** 路徑設定為 PUBLIC 集合 ***
+            const itemsRef = collection(db, `artifacts/${appId}/public/data/itinerary_items`);
+            onSnapshot(itemsRef, (snapshot) => {
+                // 核心：每次資料庫變更都會觸發此函式，確保所有瀏覽器資料一致
+                items = snapshot.docs.map(doc => ({
+                    id: doc.id,
+                    ...doc.data()
+                })).sort((a, b) => (a.country + a.name).localeCompare(b.country + b.name)); // 本地排序
+                
+                console.log("Itinerary Items (Public) updated:", items.length);
+                // 重新填充篩選器並重新渲染列表
+                populateCountryFilter(items);
+                populateTypeFilter(items);
+                filterAndRenderList(); 
+                renderAdminList(items); 
+            }, (error) => {
+                console.error("Error listening to public itinerary items:", error);
+                // 即使公開資料讀取失敗，也清空本地資料並顯示錯誤訊息
+                items = [];
+                filterAndRenderList(); 
+                renderAdminList(items); 
+                showMessage('公開行程資料讀取失敗：連線有問題。', 'error');
+            });
+
+
+            // 2. 監聽全域優惠碼 (公開資料: 所有用戶共用)
+            const couponDocRef = doc(db, `artifacts/${appId}/public/data/global_config`, 'coupon_text');
+            onSnapshot(couponDocRef, (docSnap) => {
+                if (docSnap.exists()) {
+                    globalCouponText = docSnap.data().text || '';
+                } else {
+                    globalCouponText = '';
+                }
+                console.log("Global Coupon updated:", globalCouponText.length > 0 ? 'Yes' : 'No');
+                // 更新 UI
+                updateAdminCouponTextUI();
+                filterAndRenderList(); // 這會觸發查詢頁面的優惠碼顯示更新
+            }, (error) => {
+                console.warn("Error listening to coupon data:", error);
+                // 即使公開資料讀取失敗，也清空本地數據避免顯示錯誤資訊
+                globalCouponText = '';
+                updateAdminCouponTextUI();
+                filterAndRenderList(); 
+            });
+        }
+
+
+        // ----------------------------------------------------
+        // 核心工具函式
+        // ----------------------------------------------------
+
+        /** 顯示通知訊息 */
+        function showMessage(message, type = 'success') {
+            messageBox.textContent = message;
+            messageBox.className = 'p-4 rounded-lg text-sm mb-4';
+            messageBox.classList.remove('hidden');
+
+            if (type === 'error') {
+                messageBox.classList.add('bg-red-100', 'text-red-700');
+            } else if (type === 'success') {
+                messageBox.classList.add('bg-accent/10', 'text-accent');
+            } else if (type === 'info') {
+                messageBox.classList.add('bg-blue-100', 'text-blue-700');
+            }
+            // 訊息顯示 5 秒後消失
+            setTimeout(() => messageBox.classList.add('hidden'), 5000);
+        }
+
+        /** 顯示自定義確認彈窗 */
+        function showCustomConfirm(title, message, onConfirm) {
+            confirmTitle.textContent = title;
+            confirmMessage.innerHTML = message;
+            pendingAction = onConfirm;
+            customConfirmModal.classList.remove('hidden');
+        }
+
+        /** 隱藏自定義確認彈窗 */
+        function hideCustomConfirm() {
+            customConfirmModal.classList.add('hidden');
+            pendingAction = null;
+        }
+
+        // ----------------------------------------------------
+        // 雲端資料庫操作：新增/編輯/刪除 (Firestore)
+        // ----------------------------------------------------
+
+        /** 儲存全域優惠碼文字 (公開資料) */
+        async function saveGlobalCouponText() {
+            if (!db) { showMessage('資料庫尚未連線。', 'error'); return; }
+            const text = globalCouponTextarea.value.trim();
+            // 公開資料路徑
+            const couponDocRef = doc(db, `artifacts/${appId}/public/data/global_config`, 'coupon_text');
+            saveGlobalCouponBtn.disabled = true;
+            try {
+                await setDoc(couponDocRef, { text: text });
+                showMessage('全域優惠碼文字已更新並儲存到雲端。', 'success');
+            } catch (error) {
+                console.error("Error setting coupon text:", error);
+                showMessage('儲存優惠碼失敗：' + error.message, 'error');
+            } finally {
+                saveGlobalCouponBtn.disabled = false;
+            }
+        }
+
+        /** 匯入資料 (公開資料，使用 Batch Write) */
+        async function importData() {
+            if (!db) { showMessage('資料庫尚未連線。', 'error'); return; }
+            const rawData = adminDataTextarea.value.trim();
+            if (!rawData) { showMessage('請貼上要匯入的資料。', 'info'); return; }
+
+            const lines = rawData.split('\n').filter(line => line.trim() !== '');
+            if (lines.length === 0) { showMessage('資料內容為空。', 'info'); return; }
+
+            importDataBtn.disabled = true;
+            const batch = writeBatch(db);
+            // *** 路徑設定為 PUBLIC 集合 ***
+            const itemsRef = collection(db, `artifacts/${appId}/public/data/itinerary_items`);
+
+            let importedCount = 0;
+            const invalidLines = []; 
+
+            lines.forEach((line) => {
+                // 使用多個空格作為分隔符
+                const rawParts = line.trim().split(/\s+/).filter(p => p.length > 0); 
+                
+                if (rawParts.length < 4) {
+                    invalidLines.push(line);
+                    return;
+                }
+                
+                const country = rawParts[0];
+                const type = rawParts[1];
+                const link = rawParts[rawParts.length - 1]; 
+                const name = rawParts.slice(2, rawParts.length - 1).join(' '); 
+
+                // 檢查連結格式
+                if (!link.startsWith('http')) {
+                    invalidLines.push(line);
+                    return;
+                }
+
+                const data = {
+                    country: country,
+                    type: type,
+                    name: name,
+                    link: link,
+                };
+                
+                const newDocRef = doc(itemsRef);
+                batch.set(newDocRef, data);
+                importedCount++;
+            });
+
+            try {
+                await batch.commit();
+                
+                if (invalidLines.length > 0) {
+                    adminDataTextarea.value = invalidLines.join('\n');
+                    showMessage(`成功匯入 ${importedCount} 筆資料到雲端公開列表。有 ${invalidLines.length} 筆資料因格式錯誤被忽略，已重新載入輸入框。`, 'info');
+                } else if (importedCount > 0) {
+                    showMessage(`成功匯入 ${importedCount} 筆資料到雲端公開列表。`, 'success');
+                    adminDataTextarea.value = ''; 
+                } else {
+                    showMessage(`沒有資料被匯入。請檢查您的輸入格式。`, 'error');
+                    adminDataTextarea.value = ''; 
+                }
+            } catch (error) {
+                console.error("Error batch importing data:", error);
+                showMessage('大批匯入公開資料失敗：' + error.message, 'error');
+            } finally {
+                importDataBtn.disabled = false;
+            }
+        }
+        
+        /** 處理單筆資料刪除 (公開資料) */
+        function handleDelete(itemId) {
+            showCustomConfirm(
+                '確認刪除單筆公開資料',
+                `您確定要從雲端公開資料庫中刪除這筆行程資料嗎？這會影響到所有查詢的使用者。`,
+                async () => {
+                    hideCustomConfirm();
+                    if (!db) { showMessage('資料庫尚未連線。', 'error'); return; }
+                    
+                    // *** 路徑設定為 PUBLIC 集合 ***
+                    const itemDocRef = doc(db, `artifacts/${appId}/public/data/itinerary_items`, itemId);
+                    try {
+                        await deleteDoc(itemDocRef);
+                        showMessage('公開資料已從雲端刪除。', 'success');
+                    } catch (error) {
+                        console.error("Error deleting document:", error);
+                        showMessage('刪除失敗：' + error.message, 'error');
+                    }
+                }
+            );
+        }
+        
+        /** 處理單筆資料更新 (公開資料) */
+        async function handleUpdate(itemId, country, type, name, link) {
+            if (!db) { showMessage('資料庫尚未連線。', 'error'); return; }
+            if (!country || !type || !name || !link) {
+                showMessage('國家、類型、名稱、連結都不能為空。', 'error');
+                return;
+            }
+            
+            // *** 路徑設定為 PUBLIC 集合 ***
+            const itemDocRef = doc(db, `artifacts/${appId}/public/data/itinerary_items`, itemId);
+
+            try {
+                await updateDoc(itemDocRef, {
+                    country: country.trim(),
+                    type: type.trim(),
+                    name: name.trim(),
+                    link: link.trim(),
+                });
+                showMessage('公開資料已更新並儲存到雲端。', 'success');
+                isEditingId = null; // 退出編輯模式 (onSnapshot 會自動重新渲染)
+            } catch (error) {
+                console.error("Error updating document:", error);
+                showMessage('更新公開資料失敗：' + error.message, 'error');
+            }
+        }
+
+        /** 清空所有資料 (公開資料，使用 Batch Delete) */
+        function clearAllData() {
+            showCustomConfirm(
+                '確認清空所有公開行程資料',
+                '警告：確定要刪除雲端資料庫中所有**公開**行程資料嗎？此操作會影響到所有查詢的使用者且無法復原。',
+                async () => {
+                    hideCustomConfirm();
+                    if (!db) { showMessage('資料庫尚未連線。', 'error'); return; }
+                    
+                    // *** 路徑設定為 PUBLIC 集合 ***
+                    const itemsRef = collection(db, `artifacts/${appId}/public/data/itinerary_items`);
+                    // 獲取所有文件引用
+                    const snapshot = await getDocs(itemsRef);
+                    
+                    if (snapshot.empty) {
+                        showMessage('目前雲端資料庫中沒有資料可供清空。', 'info');
+                        return;
+                    }
+
+                    const batch = writeBatch(db);
+                    snapshot.forEach(doc => {
+                        batch.delete(doc.ref);
+                    });
+
+                    try {
+                        await batch.commit();
+                        showMessage(`成功清空 ${snapshot.size} 筆雲端公開資料。`, 'success');
+                    } catch (error) {
+                        console.error("Error batch deleting data:", error);
+                        showMessage('清空資料失敗：' + error.message, 'error');
+                    }
+                }
+            );
+        }
+        
+        /** 更新管理後台的全域優惠碼 UI */
+        function updateAdminCouponTextUI() {
+            if (globalCouponTextarea) {
+                globalCouponTextarea.value = globalCouponText;
+            }
+        }
+
+        // ----------------------------------------------------
+        // 介面邏輯：篩選與渲染 (不變)
+        // ----------------------------------------------------
+
+        /** 填充國家/地區選單 */
+        function populateCountryFilter(data) {
+            const countries = new Set();
+            data.forEach(item => {
+                if (item.country && item.country.trim()) {
+                    countries.add(item.country.trim());
+                }
+            });
+
+            countryFilter.innerHTML = ''; 
+
+            const defaultOption = document.createElement('option');
+            defaultOption.value = ''; 
+            defaultOption.textContent = '國家/地區 (全部)';
+            countryFilter.appendChild(defaultOption);
+
+            Array.from(countries).sort().forEach(country => {
+                const option = document.createElement('option');
+                option.value = country.toLowerCase(); 
+                option.textContent = country;
+                countryFilter.appendChild(option);
+            });
+        }
+        
+        /** 填充票券類型選單 */
+        function populateTypeFilter(data) {
+            const types = new Set();
+            data.forEach(item => {
+                if (item.type && item.type.trim()) {
+                    types.add(item.type.trim());
+                }
+            });
+
+            typeFilter.innerHTML = ''; 
+
+            const defaultOption = document.createElement('option');
+            defaultOption.value = ''; 
+            defaultOption.textContent = '票券類型 (全部)';
+            typeFilter.appendChild(defaultOption);
+
+            Array.from(types).sort().forEach(type => {
+                const option = document.createElement('option');
+                option.value = type.toLowerCase(); 
+                option.textContent = type;
+                typeFilter.appendChild(option);
+            });
+        }
+        
+        /** 篩選資料並渲染列表 (查詢視圖) */
+        function filterAndRenderList() {
+            const countryQuery = countryFilter.value.trim().toLowerCase(); 
+            const typeQuery = typeFilter.value.trim().toLowerCase(); 
+            const keywordQuery = keywordFilter.value.trim().toLowerCase();
+
+            const filteredItems = items.filter(item => {
+                const countryMatch = !countryQuery || (item.country && item.country.toLowerCase() === countryQuery);
+                const typeMatch = !typeQuery || (item.type && item.type.toLowerCase() === typeQuery); 
+                
+                const keywordMatch = !keywordQuery || 
+                    (item.name && item.name.toLowerCase().includes(keywordQuery)) || 
+                    (item.type && item.type.toLowerCase().includes(keywordQuery)) ||
+                    (item.country && item.country.toLowerCase().includes(keywordQuery));
+
+                return countryMatch && typeMatch && keywordMatch; 
+            });
+
+            renderList(filteredItems);
+        }
+
+        /** 渲染結果列表 (查詢視圖) */
+        function renderList(filteredItems) {
+            resultsList.innerHTML = ''; 
+            resultCount.textContent = filteredItems.length;
+
+            // --- 渲染全域優惠碼文字 ---
+            if (globalCouponText) {
+                globalCouponDisplay.classList.remove('hidden');
+                globalCouponTextContent.textContent = globalCouponText;
+            } else {
+                globalCouponDisplay.classList.add('hidden');
+            }
+            
+            if (filteredItems.length === 0) {
+                resultsList.innerHTML = `<div class="p-6 text-center text-gray-500 bg-gray-50">查無符合條件的票券資料。</div>`;
+                return;
+            }
+
+            const listHtml = filteredItems.map((item) => {
+                return `
+                    <div class="p-4 border-b border-gray-100 last:border-b-0 transition duration-100 hover:bg-gray-100/50">
+                        <div class="flex items-start justify-between">
+                            <div class="space-y-1 w-full">
+                                <div class="flex flex-wrap items-center space-x-2">
+                                    <span class="bg-primary text-gray-900 text-xs font-semibold px-2.5 py-0.5 rounded-full">${item.country}</span>
+                                    <span class="text-xs font-medium text-gray-500 bg-gray-200 px-2.5 py-0.5 rounded-full">${item.type}</span>
+                                </div>
+                                <h3 class="text-lg font-bold text-gray-800 pt-1">${item.name}</h3>
+                                <p class="text-sm text-gray-500 link-text">
+                                    連結: <a href="${item.link}" target="_blank" rel="noopener noreferrer" class="text-accent hover:underline">${item.link}</a>
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            resultsList.innerHTML = listHtml;
+        }
+
+        /** 渲染管理列表 (後台視圖) */
+        function renderAdminList(allData) {
+            adminListContainer.innerHTML = '';
+            adminItemCount.textContent = allData.length;
+
+            if (allData.length === 0) {
+                adminListContainer.innerHTML = `<div class="text-center text-gray-500 p-4">目前沒有資料。請先匯入資料。</div>`;
+                return;
+            }
+
+            allData.forEach(item => {
+                const isEditing = item.id === isEditingId;
+                const row = document.createElement('div');
+                row.className = `admin-row text-xs md:text-sm ${isEditing ? 'bg-red-50 ring-2 ring-red-300 rounded-lg shadow-inner' : 'hover:bg-gray-50'}`;
+                row.dataset.id = item.id;
+
+                if (isEditing) {
+                    // 編輯模式
+                    row.innerHTML = `
+                        <input type="text" id="edit-country-${item.id}" value="${item.country}" placeholder="國家" class="p-1 border rounded-md focus:ring-red-500 focus:border-red-500 text-xs">
+                        <input type="text" id="edit-type-${item.id}" value="${item.type}" placeholder="類型" class="p-1 border rounded-md focus:ring-red-500 focus:border-red-500 text-xs">
+                        <input type="text" id="edit-name-${item.id}" value="${item.name}" placeholder="名稱" class="p-1 border rounded-md focus:ring-red-500 focus:border-red-500 text-xs col-span-1">
+                        <input type="url" id="edit-link-${item.id}" value="${item.link}" placeholder="連結" class="p-1 border rounded-md focus:ring-red-500 focus:border-red-500 text-xs">
+                        <div class="flex flex-col space-y-1">
+                            <button data-action="save" data-id="${item.id}" class="bg-accent text-white px-2 py-1 rounded-md hover:bg-accent/80 text-xs font-medium transition duration-150">儲存</button>
+                            <button data-action="cancel" data-id="${item.id}" class="bg-gray-400 text-white px-2 py-1 rounded-md hover:bg-gray-500 text-xs font-medium transition duration-150">取消</button>
+                        </div>
+                    `;
+                    // 綁定儲存事件
+                    row.querySelector(`button[data-action="save"]`).addEventListener('click', () => {
+                        const country = document.getElementById(`edit-country-${item.id}`).value;
+                        const type = document.getElementById(`edit-type-${item.id}`).value;
+                        const name = document.getElementById(`edit-name-${item.id}`).value;
+                        const link = document.getElementById(`edit-link-${item.id}`).value;
+                        handleUpdate(item.id, country, type, name, link);
+                    });
+                    // 綁定取消事件
+                    row.querySelector(`button[data-action="cancel"]`).addEventListener('click', () => {
+                        isEditingId = null;
+                        renderAdminList(items); // onSnapshot listener will handle the re-render after actual update
+                    });
+
+                } else {
+                    // 顯示模式
+                    row.innerHTML = `
+                        <div class="text-gray-700">${item.country}</div>
+                        <div class="text-gray-700">${item.type}</div>
+                        <div class="text-gray-700 truncate">${item.name}</div>
+                        <div class="text-blue-500 link-text truncate">${item.link}</div>
+                        <div class="flex flex-col space-y-1">
+                            <button data-action="edit" data-id="${item.id}" class="bg-yellow-500 text-white px-2 py-1 rounded-md hover:bg-yellow-600 text-xs font-medium transition duration-150">編輯</button>
+                            <button data-action="delete" data-id="${item.id}" class="bg-red-500 text-white px-2 py-1 rounded-md hover:bg-red-600 text-xs font-medium transition duration-150">刪除</button>
+                        </div>
+                    `;
+                    // 綁定編輯和刪除事件
+                    row.querySelector(`button[data-action="edit"]`).addEventListener('click', () => {
+                        isEditingId = item.id;
+                        renderAdminList(items); 
+                    });
+                    row.querySelector(`button[data-action="delete"]`).addEventListener('click', () => handleDelete(item.id));
+                }
+
+                adminListContainer.appendChild(row);
+            });
+        }
+        
+        /** 更新管理後台的全域優惠碼 UI */
+        function updateAdminCouponTextUI() {
+            if (globalCouponTextarea) {
+                globalCouponTextarea.value = globalCouponText;
+            }
+        }
+
+        // ----------------------------------------------------
+        // 模式切換與事件監聽器 (不變)
+        // ----------------------------------------------------
+
+        /** 檢查密碼並切換到管理員視圖 */
+        function checkPasswordAndSwitch() {
+            const enteredPassword = adminPasswordInput.value.trim();
+
+            if (enteredPassword === ADMIN_PASSWORD) {
+                // 切換模式：'admin'
+                searchView.classList.add('hidden');
+                adminView.classList.remove('hidden');
+                passwordPrompt.classList.add('hidden'); 
+                
+                // 變更為中性色
+                modeToggleBtn.textContent = '切換至查詢';
+                modeToggleBtn.classList.remove('bg-primary', 'hover:bg-primary-dark', 'focus:ring-primary', 'bg-yellow-600', 'hover:bg-yellow-700', 'focus:ring-yellow-600');
+                modeToggleBtn.classList.add('bg-gray-500', 'text-white', 'hover:bg-gray-600', 'focus:ring-gray-500');
+                
+                showMessage('密碼正確，已切換至後台。', 'success');
+                adminPasswordInput.value = ''; 
+                
+                updateAdminCouponTextUI(); // 確保後台的優惠碼文本框是最新的
+
+            } else {
+                showMessage('密碼錯誤，請重新輸入。', 'error');
+                adminPasswordInput.value = ''; 
+                adminPasswordInput.focus();
+            }
+        }
+
+        /** 模式切換邏輯 */
+        function toggleMode() {
+            const isCurrentlyAdmin = !adminView.classList.contains('hidden');
+
+            if (!isCurrentlyAdmin) {
+                // 從查詢切換到後台 (需要密碼)
+                passwordPrompt.classList.remove('hidden'); 
+                // 保持 search view 可見直到密碼驗證
+                adminView.classList.add('hidden'); 
+                
+                adminPasswordInput.value = ''; 
+                adminPasswordInput.focus();
+                
+                showMessage('請輸入密碼以切換至後台。', 'info'); 
+                
+                // 變更為警告色
+                modeToggleBtn.textContent = '切換至後台 (待確認)';
+                modeToggleBtn.classList.remove('bg-primary', 'hover:bg-primary-dark', 'focus:ring-primary', 'bg-gray-500', 'text-white', 'hover:bg-gray-600', 'focus:ring-gray-500');
+                modeToggleBtn.classList.add('bg-yellow-600', 'text-white', 'hover:bg-yellow-700', 'focus:ring-yellow-600');
+
+            } else {
+                // 從後台切換到查詢
+                adminView.classList.add('hidden');
+                searchView.classList.remove('hidden');
+                passwordPrompt.classList.add('hidden'); 
+                
+                isEditingId = null; // 退出編輯模式
+                
+                // 變回 primary color (黃色)
+                modeToggleBtn.textContent = '切換至後台';
+                modeToggleBtn.classList.remove('bg-gray-500', 'text-white', 'hover:bg-gray-600', 'focus:ring-gray-500', 'bg-yellow-600', 'hover:bg-yellow-700', 'focus:ring-yellow-600');
+                modeToggleBtn.classList.add('bg-primary', 'text-gray-900', 'hover:bg-primary-dark', 'focus:ring-primary');
+            }
+        }
+
+        // --- 綁定事件 ---
+        
+        modeToggleBtn.addEventListener('click', toggleMode);
+        importDataBtn.addEventListener('click', importData);
+        clearAllBtn.addEventListener('click', clearAllData); 
+        saveGlobalCouponBtn.addEventListener('click', saveGlobalCouponText); 
+        
+        // 複製優惠碼邏輯
+        globalCouponDisplay.addEventListener('click', () => {
+            if (globalCouponText) {
+                const fullText = globalCouponTextContent.textContent.trim();
+                let textToCopy = fullText; 
+                
+                const regex = /折扣碼：([^\n\s]+)/; // 匹配「折扣碼：」後的第一個非空白字串
+                const match = fullText.match(regex);
+                
+                if (match && match[1]) {
+                    textToCopy = match[1].trim();
+                } else {
+                    textToCopy = fullText;
+                    if (!textToCopy) return; 
+                }
+                
+                try {
+                    // 使用 document.execCommand('copy') 進行複製
+                    const textarea = document.createElement('textarea');
+                    textarea.value = textToCopy;
+                    textarea.style.position = 'fixed'; 
+                    textarea.style.left = '-9999px';
+                    document.body.appendChild(textarea);
+                    textarea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(textarea);
+
+                    if (match && match[1]) {
+                        showMessage(`折扣碼「${textToCopy}」已複製到剪貼簿！`, 'success'); 
+                    } else {
+                        showMessage('優惠資訊已複製到剪貼簿！', 'success'); 
+                    }
+                } catch (err) {
+                    showMessage('複製到剪貼簿失敗。請手動複製文本。', 'error');
+                }
+            }
+        });
+        
+        passwordSubmitBtn.addEventListener('click', checkPasswordAndSwitch);
+        
+        adminPasswordInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                checkPasswordAndSwitch();
+            }
+        });
+        
+        countryFilter.addEventListener('change', filterAndRenderList); 
+        typeFilter.addEventListener('change', filterAndRenderList); 
+        keywordFilter.addEventListener('input', filterAndRenderList);
+        
+        // 綁定自定義彈窗的按鈕事件
+        confirmActionBtn.addEventListener('click', () => {
+            if (pendingAction) {
+                pendingAction();
+            }
+        });
+
+        cancelActionBtn.addEventListener('click', hideCustomConfirm);
+
+        // 應用程式啟動 (初始化)
+        window.onload = function() {
+            loadingSpinner.classList.remove('hidden');
+            searchView.classList.add('hidden');
+            setupFirebase();
+        }
+
+    </script>
+</body>
+</html>
